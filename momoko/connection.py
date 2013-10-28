@@ -233,6 +233,7 @@ class Connection:
         self.fileno = self.connection.fileno()
         self._transaction_status = self.connection.get_transaction_status
         self.ioloop = ioloop or IOLoop.instance()
+        self.in_transaction_method = False
 
         if callback:
             self.callback = partial(callback, self)
@@ -407,6 +408,7 @@ class Connection:
             if cursor:
                 cursors.append(cursor)
             if not queue:
+                self.in_transaction_method = False
                 callback(cursors[1:-1], None)
                 return
 
@@ -414,8 +416,10 @@ class Connection:
             self.execute(operation, parameters, cursor_factory, exec_statement)
 
         def error_callback(statement_error, cursor, rollback_error):
+            self.in_transaction_method = False
             callback(None, rollback_error or statement_error)
 
+        self.in_transaction_method = True
         self.ioloop.add_callback(exec_statement)
 
     def register_hstore(self, globally=False, unicode=False, callback=None):
@@ -448,8 +452,9 @@ class Connection:
         """
         Check if the connection is busy or not.
         """
-        return self.connection.isexecuting() or (self.connection.closed == 0 and
-            self._transaction_status() != TRANSACTION_STATUS_IDLE)
+        return (self.in_transaction_method or 
+                self.connection.isexecuting() or 
+                (self.connection.closed == 0 and self._transaction_status() != TRANSACTION_STATUS_IDLE))
 
     @property
     def closed(self):
